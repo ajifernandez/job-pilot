@@ -17,6 +17,7 @@ export function ApplicationModal({ job, onClose, onChanged }: { job: Job; onClos
   const [highlights, setHighlights] = useState("");
   const [notes, setNotes] = useState(job.notes ?? "");
   const [tab, setTab] = useState<Tab>("letter");
+  const [loaded, setLoaded] = useState(false); // ya sabemos si existe una candidatura guardada
   const [busy, setBusy] = useState<string>("");
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
@@ -47,9 +48,10 @@ export function ApplicationModal({ job, onClose, onChanged }: { job: Job; onClos
 
   useEffect(() => {
     api<Application | null>(`/api/jobs/${job.id}/application`)
-      .then((a) => (a ? apply(a) : generate()))
-      .catch((e) => setError(e.message));
-  }, [job.id, apply, generate]);
+      .then((a) => a && apply(a))
+      .catch((e) => setError(e.message))
+      .finally(() => setLoaded(true));
+  }, [job.id, apply]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -100,7 +102,7 @@ export function ApplicationModal({ job, onClose, onChanged }: { job: Job; onClos
           <button onClick={onClose} aria-label="Cerrar" className="text-zinc-400 hover:text-zinc-700">✕</button>
         </div>
 
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm">
+        {app && <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm">
           <div className="flex gap-1" role="tablist">
             {TABS.map(([k, label]) => (
               <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className={`rounded px-3 py-1 ${tab === k ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "bg-zinc-100 dark:bg-zinc-800"}`}>{label}</button>
@@ -112,8 +114,24 @@ export function ApplicationModal({ job, onClose, onChanged }: { job: Job; onClos
               <button key={l} onClick={() => switchLang(l)} disabled={!!busy} aria-pressed={app?.lang === l} className={`rounded border px-2 py-0.5 ${app?.lang === l ? "border-violet-600 bg-violet-600 text-white" : "border-zinc-300 dark:border-zinc-700"}`}>{l.toUpperCase()}</button>
             ))}
           </div>
-        </div>
+        </div>}
 
+        {loaded && !app && !busy && (
+          <div className="rounded border border-dashed border-zinc-300 py-12 text-center dark:border-zinc-700">
+            <p className="mb-1 text-sm">Aún no hay candidatura para esta oferta.</p>
+            <p className="mb-4 text-xs text-zinc-500">Generarla usa Gemini (unos 25 s y tokens). No se hace hasta que lo pidas.</p>
+            <div className="flex justify-center gap-2">
+              {(["es", "en"] as const).map((l) => {
+                const suggested = (job.language === "es" ? "es" : "en") === l;
+                return (
+                  <button key={l} onClick={() => generate(l)} className={`rounded px-4 py-2 text-sm ${suggested ? "bg-violet-600 text-white" : "border border-zinc-300 dark:border-zinc-700"}`}>
+                    Generar con CV en {l === "es" ? "español" : "inglés"}{suggested && " (recomendado)"}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         {busy && !app && <p className="py-16 text-center text-sm text-zinc-500" role="status">{busy}</p>}
         {busy && app && <p className="mb-2 text-sm text-violet-700" role="status">{busy}</p>}
 
