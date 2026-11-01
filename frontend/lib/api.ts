@@ -44,7 +44,8 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    const detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail ?? res.statusText);
+    const d = body.detail;
+    const detail = typeof d === "string" ? d : Array.isArray(d) ? d.map((x: { msg?: string }) => (x.msg ?? "").replace(/^Value error, /, "")).join("; ") : res.statusText;
     throw new Error(detail);
   }
   return res.status === 204 ? (undefined as T) : res.json();
@@ -63,10 +64,13 @@ export type Profile = {
   min_salary: number | null;
   currency: string;
   exclude_keywords: string[];
+  portals: string[];
   min_score: number;
   active: boolean;
   last_run_at: string | null;
 };
+
+export type Source = { domain: string; found: number; new: number; added: number; failed: number };
 
 export type Run = {
   id: string;
@@ -75,6 +79,7 @@ export type Run = {
   candidates: number;
   inserted: number;
   error: string | null;
+  sources: Source[] | null;
   started_at: string;
   finished_at: string | null;
 };

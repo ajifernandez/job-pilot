@@ -10,13 +10,13 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from google.genai import errors as genai_errors
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-from sqlalchemy import select
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.ai import choose_cv, extract_job, write_application
 from app.config import settings
-from app.finder import fail_stale_runs, scheduler, start_run
+from app.finder import fail_stale_runs, normalize_portal, scheduler, start_run
 from app.fetch_page import FetchError, canonical_url, fetch_page
 from app.models import CV, JOB_STATUS, WORK_MODES, Application, Base, Job, SearchProfile, SearchRun, engine, get_db
 
@@ -25,8 +25,11 @@ STATIC_DIR = Path(__file__).parent.parent / "static"
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # ponytail: create_all sin migraciones; al primer cambio de esquema añadir Alembic + `alembic stamp` del baseline
+    # ponytail: create_all + ALTER ... IF NOT EXISTS a mano; con >3 cambios de esquema pasar a Alembic
     Base.metadata.create_all(engine)
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE search_profiles ADD COLUMN IF NOT EXISTS portals text[] NOT NULL DEFAULT '{}'"))
+        conn.execute(text("ALTER TABLE search_runs ADD COLUMN IF NOT EXISTS sources jsonb"))
     fail_stale_runs()
     task = asyncio.create_task(scheduler()) if settings.search_interval_hours > 0 else None
     yield
@@ -131,8 +134,18 @@ class ProfileIn(BaseModel):
     min_salary: int | None = None
     currency: str = Field("EUR", max_length=3)
     exclude_keywords: list[str] = []
+    portals: list[str] = []  # dominios a priorizar, p. ej. weworkremotely.com
     min_score: int = Field(60, ge=0, le=100)
     active: bool = True
+
+
+    @field_validator("portals")
+    @classmethod
+    def clean_portals(cls, v: list[str]) -> list[str]:
+        cleaned = [normalize_portal(p) for p in v]
+        if bad := [p for p, c in zip(v, cleaned) if p.strip() and not c]:
+            raise ValueError(f"Portal no válido: {bad[0]}")
+        return list(dict.fromkeys(c for c in cleaned if c))
 
 
 class ProfileOut(ProfileIn):
@@ -149,6 +162,7 @@ class RunOut(BaseModel):
     candidates: int
     inserted: int
     error: str | None
+    sources: list[dict] | None
     started_at: datetime
     finished_at: datetime | None
 

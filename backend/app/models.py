@@ -58,6 +58,7 @@ class SearchProfile(Base):
     min_salary: Mapped[int | None] = mapped_column(Integer)
     currency: Mapped[str] = mapped_column(String(3), default="EUR")
     exclude_keywords: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list)
+    portals: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list, server_default="{}")  # dominios a priorizar
     min_score: Mapped[int] = mapped_column(Integer, default=60)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -122,6 +123,7 @@ class SearchRun(Base):
     candidates: Mapped[int] = mapped_column(Integer, default=0)
     inserted: Mapped[int] = mapped_column(Integer, default=0)
     queries: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
+    sources: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)  # [{domain, found, new, added, failed}]
     error: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime] = created()
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

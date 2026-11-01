@@ -114,7 +114,13 @@ async def discover(profile, limit: int = 15) -> list[Candidate]:
         f"- Locations: {', '.join(profile.locations) or 'any'}\n"
         + (f"- Minimum salary: {profile.min_salary} {profile.currency}\n" if profile.min_salary else "")
         + f"- Exclude: {', '.join(profile.exclude_keywords) or 'none'}\n"
-        f"Return up to {limit} distinct postings."
+        + (
+            "Search these portals specifically (use site: queries) in addition to the open web, "
+            f"and include their postings whenever they match: {', '.join(profile.portals)}\n"
+            if profile.portals
+            else ""
+        )
+        + f"Return up to {limit} distinct postings."
     )
     result = await generate_json(Discovery, DISCOVER_SYSTEM, user, settings.gemini_model_search, search=True)
     return result.postings[:limit]

@@ -4,19 +4,33 @@ el umbral del perfil. Sin bandeja de entrada ni importación manual."""
 
 import asyncio
 import logging
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select, update
+from urllib.parse import urlsplit
 
 from app.ai import JobExtraction, extract_job, discover
 from app.config import settings
-from app.fetch_page import canonical_url, fetch_page
+from app.fetch_page import canonical_url, fetch_page, resolve_redirect
 from app.models import CV, Job, SearchProfile, SearchRun, SessionLocal
 
 log = logging.getLogger("finder")
 CONCURRENCY = 4
+REDIRECT_HOST = "vertexaisearch.cloud.google.com"
 _lock = asyncio.Lock()  # una búsqueda a la vez: protege la cuota de Gemini
 _tasks: set[asyncio.Task] = set()
+
+
+def domain_of(url: str) -> str:
+    host = (urlsplit(url).hostname or "").lower()
+    return host.removeprefix("www.")
+
+
+def normalize_portal(raw: str) -> str:
+    """'https://www.RemoteOK.com/jobs/' -> 'remoteok.com/jobs'. Vacío si no parece un dominio."""
+    p = raw.strip().lower().removeprefix("https://").removeprefix("http://").removeprefix("www.").rstrip("/")
+    return p if "." in p and " " not in p else ""
 
 
 def accepts(data: JobExtraction, profile: SearchProfile) -> bool:
@@ -72,12 +86,31 @@ async def _search(db, run: SearchRun, profile: SearchProfile) -> int:
     known_keys = set(db.scalars(select(Job.dedupe_key)))
     known_titles = {(c.lower(), t.lower()) for c, t in db.execute(select(Job.company, Job.title))}
     candidates = {}
-    for c in await discover(profile):
+    stats = defaultdict(lambda: {"found": 0, "new": 0, "added": 0, "failed": 0})
+    found = await discover(profile)
+
+    async def resolve(c) -> None:
+        # Gemini a veces devuelve enlaces de grounding (redirect): el dominio real es el destino
+        if domain_of(c.url) == REDIRECT_HOST:
+            try:
+                c.url = await resolve_redirect(c.url)
+            except Exception:  # noqa: BLE001 - si no se resuelve, se queda el enlace original
+                log.warning("redirect not resolved: %s", c.url)
+
+    await asyncio.gather(*(resolve(c) for c in found))
+    for c in found:
         key = canonical_url(c.url)
-        if key not in known_keys and (c.company.lower(), c.title.lower()) not in known_titles:
-            candidates.setdefault(key, c)
+        stats[domain_of(c.url)]["found"] += 1
+        if key not in known_keys and (c.company.lower(), c.title.lower()) not in known_titles and key not in candidates:
+            candidates[key] = c
+            stats[domain_of(c.url)]["new"] += 1
+
+    def publish() -> None:  # visible en la UI mientras la búsqueda sigue en curso
+        run.sources = [{"domain": d, **v} for d, v in sorted(stats.items(), key=lambda kv: -kv[1]["found"])]
+        db.commit()
+
     run.candidates = len(candidates)
-    db.commit()
+    publish()
 
     sem = asyncio.Semaphore(CONCURRENCY)
     errors: list[str] = []
@@ -89,6 +122,7 @@ async def _search(db, run: SearchRun, profile: SearchProfile) -> int:
                 return key, page, await extract_job(page.llm_text, cv_md, preferences(profile))
             except Exception as e:  # noqa: BLE001 - una oferta rota no tumba la búsqueda
                 errors.append(f"{cand.url}: {e}")
+                stats[domain_of(cand.url)]["failed"] += 1
                 return None
 
     inserted = 0
@@ -100,12 +134,14 @@ async def _search(db, run: SearchRun, profile: SearchProfile) -> int:
         if pair in known_titles:
             continue
         known_titles.add(pair)
+        stats[domain_of(candidates[key].url)]["added"] += 1
         db.add(Job(
             source="ai", profile_id=profile.id, dedupe_key=key, url=page.url,
             description=page.description, status="to_apply",
             **data.model_dump(exclude={"is_job_posting", "is_active"}),
         ))
         inserted += 1
+    publish()
     if errors and not inserted and len(errors) == len(candidates):
         raise RuntimeError(errors[0])  # todo falló: probablemente cuota o red
     return inserted

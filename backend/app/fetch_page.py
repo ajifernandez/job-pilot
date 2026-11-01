@@ -130,6 +130,18 @@ async def fetch_page(url: str) -> Page:
     raise FetchError("Demasiadas redirecciones")
 
 
+async def resolve_redirect(url: str) -> str:
+    """URL final tras redirecciones, sin leer el cuerpo (los enlaces de grounding de Gemini son redirects)."""
+    async with httpx.AsyncClient(timeout=15, headers={"User-Agent": UA}) as client:
+        for _ in range(5):
+            _check_public(url)
+            async with client.stream("GET", url) as res:
+                if not res.is_redirect:
+                    return url
+                url = urljoin(url, res.headers["location"])
+    return url
+
+
 def canonical_url(url: str) -> str:
     parts = urlsplit(url.strip())
     query = urlencode([(k, v) for k, v in parse_qsl(parts.query) if not k.lower().startswith(("utm_", "gh_src", "ref"))])

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, Profile, Run } from "@/lib/api";
+import { api, Profile, Run, Source } from "@/lib/api";
 
 const MODES = [
   ["remote", "Remoto"],
@@ -13,8 +13,8 @@ const list = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
 const field = "w-full rounded border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900";
 const fmt = (d: string | null) => (d ? new Date(d).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" }) : "–");
 
-type Form = { name: string; roles: string; technologies: string; locations: string; exclude: string; modes: string[]; minSalary: string; minScore: number; active: boolean };
-const EMPTY: Form = { name: "", roles: "", technologies: "", locations: "", exclude: "", modes: ["remote"], minSalary: "", minScore: 60, active: true };
+type Form = { name: string; roles: string; technologies: string; locations: string; exclude: string; portals: string; modes: string[]; minSalary: string; minScore: number; active: boolean };
+const EMPTY: Form = { name: "", roles: "", technologies: "", locations: "", exclude: "", portals: "", modes: ["remote"], minSalary: "", minScore: 60, active: true };
 
 export default function SearchPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -52,6 +52,7 @@ export default function SearchPage() {
       technologies: list(form.technologies),
       locations: list(form.locations),
       exclude_keywords: list(form.exclude),
+      portals: list(form.portals),
       work_modes: form.modes,
       min_salary: form.minSalary ? Number(form.minSalary) : null,
       min_score: form.minScore,
@@ -71,7 +72,7 @@ export default function SearchPage() {
     setEditing(p.id);
     setForm({
       name: p.name, roles: p.roles.join(", "), technologies: p.technologies.join(", "), locations: p.locations.join(", "),
-      exclude: p.exclude_keywords.join(", "), modes: p.work_modes, minSalary: p.min_salary?.toString() ?? "", minScore: p.min_score, active: p.active,
+      exclude: p.exclude_keywords.join(", "), portals: p.portals.join(", "), modes: p.work_modes, minSalary: p.min_salary?.toString() ?? "", minScore: p.min_score, active: p.active,
     });
   }
 
@@ -85,6 +86,15 @@ export default function SearchPage() {
     }
   }
 
+  const totals = Object.values(
+    runs.flatMap((r) => r.sources ?? []).reduce<Record<string, Source>>((acc, x) => {
+      const t = (acc[x.domain] ??= { domain: x.domain, found: 0, new: 0, added: 0, failed: 0 });
+      t.found += x.found; t.new += x.new; t.added += x.added; t.failed += x.failed;
+      return acc;
+    }, {}),
+  ).sort((a, b) => b.added - a.added || b.found - a.found);
+  const requested = new Set(profiles.flatMap((p) => p.portals.map((x) => x.split("/")[0])));
+
   const name = (id: string) => profiles.find((p) => p.id === id)?.name ?? "(borrado)";
 
   return (
@@ -96,6 +106,8 @@ export default function SearchPage() {
         <label className="block text-sm">Tecnologías<input value={form.technologies} onChange={(e) => setForm({ ...form, technologies: e.target.value })} placeholder="Python, FastAPI, PostgreSQL" className={field} /></label>
         <label className="block text-sm">Ubicaciones<input value={form.locations} onChange={(e) => setForm({ ...form, locations: e.target.value })} placeholder="Spain, Europe" className={field} /></label>
         <label className="block text-sm">Excluir (palabras en el título)<input value={form.exclude} onChange={(e) => setForm({ ...form, exclude: e.target.value })} placeholder="Junior, Intern" className={field} /></label>
+        <label className="block text-sm">Portales adicionales a priorizar<input value={form.portals} onChange={(e) => setForm({ ...form, portals: e.target.value })} placeholder="weworkremotely.com, remoteok.com, jobs.lever.co" className={field} />
+          <span className="text-xs text-zinc-500">Dominios (separados por coma). Además busca en toda la web; estos se consultan expresamente.</span></label>
         <fieldset className="flex gap-4 text-sm">
           <legend className="mb-1">Modalidad</legend>
           {MODES.map(([k, label]) => (
@@ -142,6 +154,20 @@ export default function SearchPage() {
         </section>
 
         <section>
+          <h2 className="mb-1 font-medium">Dónde busca</h2>
+          <p className="mb-2 text-xs text-zinc-500">Gemini usa Google Search sobre toda la web y los portales de tus perfiles. Estos son los sitios donde ha encontrado ofertas (últimas 20 ejecuciones): añadidas / encontradas.</p>
+          {totals.length === 0 ? <p className="text-sm text-zinc-500">Aún no hay datos: lanza una búsqueda.</p> : (
+            <ul className="flex flex-wrap gap-2 text-xs">
+              {totals.map((t) => (
+                <li key={t.domain} className={`rounded border px-2 py-1 ${requested.has(t.domain) ? "border-violet-400" : "border-zinc-300 dark:border-zinc-700"}`} title={`${t.new} nuevas, ${t.failed} fallidas${requested.has(t.domain) ? " · portal indicado por ti" : ""}`}>
+                  {t.domain} <b>{t.added}/{t.found}</b>{t.failed > 0 && <span className="text-red-600"> · {t.failed} ✕</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section>
           <h2 className="mb-2 font-medium">Historial de búsquedas</h2>
           <table className="w-full text-left text-sm">
             <thead className="text-xs text-zinc-500"><tr><th className="py-1">Inicio</th><th>Perfil</th><th>Estado</th><th>Candidatas</th><th>Añadidas</th></tr></thead>
@@ -153,6 +179,11 @@ export default function SearchPage() {
                   <td className={r.status === "failed" ? "text-red-600" : ""}>
                     {r.status === "running" ? "Buscando…" : r.status === "done" ? "Listo" : "Error"}
                     {r.error && <span className="block text-xs">{r.error}</span>}
+                    {r.sources && r.sources.length > 0 && (
+                      <span className="mt-1 flex flex-wrap gap-1 text-xs font-normal text-zinc-500">
+                        {r.sources.map((x) => <span key={x.domain} className="rounded bg-zinc-100 px-1.5 py-0.5 dark:bg-zinc-800">{x.domain} {x.added}/{x.found}</span>)}
+                      </span>
+                    )}
                   </td>
                   <td>{r.candidates}</td>
                   <td>{r.inserted}</td>

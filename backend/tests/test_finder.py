@@ -34,3 +34,13 @@ def test_choose_cv_by_language_with_fallback():
     assert choose_cv(both, "es", override="en") == "CV-EN"  # toggle manual
     assert choose_cv({"en": "CV-EN"}, "es") == "CV-EN"  # falta el ES -> el otro
     assert choose_cv({}, "es") is None
+
+
+def test_portal_and_domain_helpers():
+    from app.finder import domain_of, normalize_portal
+
+    assert normalize_portal("https://www.RemoteOK.com/jobs/") == "remoteok.com/jobs"
+    assert normalize_portal("weworkremotely.com") == "weworkremotely.com"
+    assert normalize_portal("no es un dominio") == ""
+    assert normalize_portal("palabra") == ""
+    assert domain_of("https://www.Jobs.Lever.co/acme/1?x=1") == "jobs.lever.co"
