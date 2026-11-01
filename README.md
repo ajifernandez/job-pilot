@@ -16,7 +16,7 @@ cp .env.example .env        # pon GEMINI_API_KEY
 docker compose up -d --build   # http://localhost:8420
 ```
 Desarrollo: `cd backend && uv run uvicorn app.main:app --reload` y `cd frontend && NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev`.
-Tests: `cd backend && uv run pytest`.
+Tests: `cd backend && uv run pytest` (offline). Con Gemini real sobre ofertas guardadas: `RUN_LIVE=1 uv run pytest tests/test_fixtures.py`.
 
 ## Dockge
 1. "+ Compose" → nombre `job-pilot` → pega [`deploy/dockge-compose.yaml`](deploy/dockge-compose.yaml).

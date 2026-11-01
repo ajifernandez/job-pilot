@@ -37,6 +37,7 @@ def start_run(profile_id) -> SearchRun:
     with SessionLocal() as db:
         run = SearchRun(profile_id=profile_id, status="running")
         db.add(run)
+        db.get(SearchProfile, profile_id).last_run_at = datetime.now(timezone.utc)  # el programador no repite justo después
         db.commit()
         db.refresh(run)
     task = asyncio.create_task(_execute(run.id))
@@ -120,9 +121,6 @@ async def scheduler() -> None:
                 due = db.scalars(select(SearchProfile).where(SearchProfile.active)).all()
                 now = datetime.now(timezone.utc)
                 due = [p for p in due if p.last_run_at is None or now - p.last_run_at >= interval]
-                for p in due:
-                    p.last_run_at = now
-                db.commit()
             for p in due:
                 start_run(p.id)
         except Exception:  # noqa: BLE001
