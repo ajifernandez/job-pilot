@@ -49,3 +49,32 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   }
   return res.status === 204 ? (undefined as T) : res.json();
 }
+
+// Columnas del tablero (inbox/dismissed no se muestran: la búsqueda inserta directo en "Por aplicar")
+export const COLUMNS: JobStatus[] = ["to_apply", "applying", "applied", "interview", "offer", "rejected"];
+
+export type Profile = {
+  id: string;
+  name: string;
+  roles: string[];
+  technologies: string[];
+  work_modes: string[];
+  locations: string[];
+  min_salary: number | null;
+  currency: string;
+  exclude_keywords: string[];
+  min_score: number;
+  active: boolean;
+  last_run_at: string | null;
+};
+
+export type Run = {
+  id: string;
+  profile_id: string;
+  status: "running" | "done" | "failed";
+  candidates: number;
+  inserted: number;
+  error: string | null;
+  started_at: string;
+  finished_at: string | null;
+};

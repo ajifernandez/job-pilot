@@ -4,11 +4,11 @@ Gestor de candidaturas con IA (Gemini): Kanban de ofertas, scoring contra tus CV
 
 Stack: FastAPI + PostgreSQL (SQLAlchemy) · Next.js (export estático servido por FastAPI) · Google Gemini.
 
-## Estado (MVP, pasos 0–2)
-- Alta manual de ofertas por URL o texto → extracción + match score (`gemini-3.5-flash-lite`).
-- CVs ES/EN en Markdown.
-- Lista con filtros por estado/tecnología; regla de servidor: no se pasa a *Aplicado* sin candidatura confirmada.
-- Pendiente: Kanban drag & drop, candidaturas (cover letter), Job Finder (grounding), cron.
+## Estado
+- **Tablero Kanban** con drag & drop (el orden se guarda en servidor), vista lista y filtros por tecnología, origen (IA/manual) y fecha.
+- **Búsqueda automática**: define perfiles en `/search`; Gemini (Google Search grounding) descubre ofertas, se verifica cada URL descargando la página, se puntúa contra tu CV y las que superan el score mínimo entran solas en *Por aplicar*. Se ejecuta cada `SEARCH_INTERVAL_HOURS` (12 por defecto, 0 = desactivada) o con *Buscar ahora*. Descartar una oferta de la IA la oculta pero evita que vuelva a aparecer.
+- Alta manual de ofertas por URL o texto, CVs ES/EN en Markdown.
+- Regla de servidor: no se pasa a *Aplicado* sin candidatura confirmada (el flujo de candidaturas/cover letters es el siguiente paso).
 
 ## Local
 ```bash

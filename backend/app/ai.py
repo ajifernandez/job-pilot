@@ -79,3 +79,42 @@ async def extract_job(page_text: str, cv_md: str | None, preferences: dict | Non
     result.requirements = result.requirements[:12]  # Gemini ignora maxItems en algunos casos
     result.technologies = result.technologies[:20]
     return result
+
+
+# --- Descubrimiento de ofertas (Google Search grounding + JSON) ---------------
+
+DISCOVER_SYSTEM = """\
+You are a job-search assistant with web search. Find real, currently open job postings.
+Rules:
+- Return ONLY links to an individual posting (the URL must contain the specific job,
+  e.g. jobs.lever.co/acme/<uuid>, boards.greenhouse.io/acme/jobs/<id>,
+  jobs.ashbyhq.com/acme/<uuid>, apply.workable.com/acme/j/<id>), never a company
+  careers home, search page or listing page.
+- Prefer company career pages / ATS. Avoid linkedin.com, indeed.com and glassdoor.com.
+- Never invent a URL. If unsure it exists, leave it out.
+"""
+
+
+class Candidate(BaseModel):
+    title: str
+    company: str
+    url: str
+
+
+class Discovery(BaseModel):
+    postings: list[Candidate]
+
+
+async def discover(profile, limit: int = 15) -> list[Candidate]:
+    user = (
+        "Find job postings published in the last 7 days that match:\n"
+        f"- Roles: {', '.join(profile.roles)}\n"
+        f"- Technologies: {', '.join(profile.technologies) or 'any'}\n"
+        f"- Work mode: {', '.join(profile.work_modes) or 'any'}\n"
+        f"- Locations: {', '.join(profile.locations) or 'any'}\n"
+        + (f"- Minimum salary: {profile.min_salary} {profile.currency}\n" if profile.min_salary else "")
+        + f"- Exclude: {', '.join(profile.exclude_keywords) or 'none'}\n"
+        f"Return up to {limit} distinct postings."
+    )
+    result = await generate_json(Discovery, DISCOVER_SYSTEM, user, settings.gemini_model_search, search=True)
+    return result.postings[:limit]

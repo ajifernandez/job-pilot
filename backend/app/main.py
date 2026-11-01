@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import uuid
 from contextlib import asynccontextmanager
@@ -9,14 +10,15 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from google.genai import errors as genai_errors
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.ai import extract_job
 from app.config import settings
+from app.finder import fail_stale_runs, scheduler, start_run
 from app.fetch_page import FetchError, canonical_url, fetch_page
-from app.models import CV, JOB_STATUS, Application, Base, Job, engine, get_db
+from app.models import CV, JOB_STATUS, WORK_MODES, Application, Base, Job, SearchProfile, SearchRun, engine, get_db
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
 
@@ -25,7 +27,11 @@ STATIC_DIR = Path(__file__).parent.parent / "static"
 async def lifespan(_: FastAPI):
     # ponytail: create_all sin migraciones; al primer cambio de esquema añadir Alembic + `alembic stamp` del baseline
     Base.metadata.create_all(engine)
+    fail_stale_runs()
+    task = asyncio.create_task(scheduler()) if settings.search_interval_hours > 0 else None
     yield
+    if task:
+        task.cancel()
 
 
 app = FastAPI(title="Job Pilot", lifespan=lifespan)
@@ -86,6 +92,42 @@ class JobOut(BaseModel):
     notes: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class Reorder(BaseModel):
+    status: JobStatus
+    ids: list[uuid.UUID]  # orden final de la columna destino
+
+
+class ProfileIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    roles: list[str] = Field(min_length=1)
+    technologies: list[str] = []
+    work_modes: list[Literal[WORK_MODES]] = []  # type: ignore[valid-type]
+    locations: list[str] = []
+    min_salary: int | None = None
+    currency: str = Field("EUR", max_length=3)
+    exclude_keywords: list[str] = []
+    min_score: int = Field(60, ge=0, le=100)
+    active: bool = True
+
+
+class ProfileOut(ProfileIn):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    last_run_at: datetime | None
+
+
+class RunOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    profile_id: uuid.UUID
+    status: str
+    candidates: int
+    inserted: int
+    error: str | None
+    started_at: datetime
+    finished_at: datetime | None
 
 
 # --- Rutas ------------------------------------------------------------------
@@ -163,9 +205,7 @@ async def create_job(body: JobCreate, db: Session = Depends(get_db)):
 def update_job(job_id: uuid.UUID, body: JobPatch, db: Session = Depends(get_db)):
     job = db.get(Job, job_id) or _404()
     if body.status == "applied" and job.status != "applied":
-        finalized = db.scalar(select(Application.finalized_at).where(Application.job_id == job_id))
-        if not finalized:
-            raise HTTPException(409, "Revisa y confirma la candidatura antes de marcarla como Aplicado")
+        _require_finalized(db, [job_id])
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(job, field, value)
     db.commit()
@@ -173,10 +213,75 @@ def update_job(job_id: uuid.UUID, body: JobPatch, db: Session = Depends(get_db))
     return job
 
 
+@app.post("/api/jobs/reorder", status_code=204)
+def reorder_jobs(body: Reorder, db: Session = Depends(get_db)):
+    jobs = {j.id: j for j in db.scalars(select(Job).where(Job.id.in_(body.ids)))}
+    if len(jobs) != len(set(body.ids)):
+        raise HTTPException(404, "Oferta no encontrada")
+    if body.status == "applied":
+        _require_finalized(db, [i for i, j in jobs.items() if j.status != "applied"])
+    for pos, job_id in enumerate(body.ids):
+        jobs[job_id].status, jobs[job_id].position = body.status, pos
+    db.commit()
+
+
 @app.delete("/api/jobs/{job_id}", status_code=204)
 def delete_job(job_id: uuid.UUID, db: Session = Depends(get_db)):
-    db.delete(db.get(Job, job_id) or _404())
+    job = db.get(Job, job_id) or _404()
+    if job.source == "ai":
+        job.status = "dismissed"  # se conserva para que la búsqueda no la vuelva a traer
+    else:
+        db.delete(job)
     db.commit()
+
+
+def _require_finalized(db: Session, job_ids: list[uuid.UUID]) -> None:
+    done = set(db.scalars(select(Application.job_id).where(Application.job_id.in_(job_ids), Application.finalized_at.is_not(None))))
+    if set(job_ids) - done:
+        raise HTTPException(409, "Revisa y confirma la candidatura antes de marcarla como Aplicado")
+
+
+@app.get("/api/profiles", response_model=list[ProfileOut])
+def list_profiles(db: Session = Depends(get_db)):
+    return db.scalars(select(SearchProfile).order_by(SearchProfile.created_at)).all()
+
+
+@app.post("/api/profiles", response_model=ProfileOut, status_code=201)
+def create_profile(body: ProfileIn, db: Session = Depends(get_db)):
+    profile = SearchProfile(**body.model_dump())
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
+    return profile
+
+
+@app.put("/api/profiles/{profile_id}", response_model=ProfileOut)
+def update_profile(profile_id: uuid.UUID, body: ProfileIn, db: Session = Depends(get_db)):
+    profile = db.get(SearchProfile, profile_id) or _404()
+    for field, value in body.model_dump().items():
+        setattr(profile, field, value)
+    db.commit()
+    db.refresh(profile)
+    return profile
+
+
+@app.delete("/api/profiles/{profile_id}", status_code=204)
+def delete_profile(profile_id: uuid.UUID, db: Session = Depends(get_db)):
+    db.delete(db.get(SearchProfile, profile_id) or _404())
+    db.commit()
+
+
+@app.post("/api/profiles/{profile_id}/run", response_model=RunOut, status_code=202)
+async def run_profile(profile_id: uuid.UUID, db: Session = Depends(get_db)):  # async: start_run necesita el event loop
+    db.get(SearchProfile, profile_id) or _404()
+    if db.scalar(select(SearchRun.id).where(SearchRun.profile_id == profile_id, SearchRun.status == "running")):
+        raise HTTPException(409, "Ya hay una búsqueda en curso para este perfil")
+    return start_run(profile_id)
+
+
+@app.get("/api/runs", response_model=list[RunOut])
+def list_runs(db: Session = Depends(get_db)):
+    return db.scalars(select(SearchRun).order_by(SearchRun.started_at.desc()).limit(20)).all()
 
 
 def _404():

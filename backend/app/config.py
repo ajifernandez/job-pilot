@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     gemini_model_extract: str = "gemini-3.5-flash-lite"
     gemini_model_write: str = "gemini-3.8-flash"
     database_url: str = "postgresql+psycopg://jobpilot:jobpilot@localhost:5432/jobpilot"
+    search_interval_hours: int = 12  # 0 = sin búsqueda automática
     cors_origins: list[str] = ["http://localhost:3000"]
 
 

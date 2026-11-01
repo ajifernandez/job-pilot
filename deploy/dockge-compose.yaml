@@ -31,6 +31,7 @@ services:
       GEMINI_MODEL_SEARCH: ${GEMINI_MODEL_SEARCH:-gemini-3.8-flash}
       GEMINI_MODEL_EXTRACT: ${GEMINI_MODEL_EXTRACT:-gemini-3.5-flash-lite}
       GEMINI_MODEL_WRITE: ${GEMINI_MODEL_WRITE:-gemini-3.8-flash}
+      SEARCH_INTERVAL_HOURS: ${SEARCH_INTERVAL_HOURS:-12}
       DATABASE_URL: postgresql+psycopg://jobpilot:${POSTGRES_PASSWORD:-jobpilot}@db:5432/jobpilot
 
 volumes:
