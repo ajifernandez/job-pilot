@@ -1,0 +1,33 @@
+# Local: `docker compose up -d --build` (lee .env de esta carpeta)
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: jobpilot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-jobpilot}
+      POSTGRES_DB: jobpilot
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jobpilot"]
+      interval: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-8420}:8000"
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?falta GEMINI_API_KEY}
+      GEMINI_MODEL_SEARCH: ${GEMINI_MODEL_SEARCH:-gemini-3.8-flash}
+      GEMINI_MODEL_EXTRACT: ${GEMINI_MODEL_EXTRACT:-gemini-3.5-flash-lite}
+      GEMINI_MODEL_WRITE: ${GEMINI_MODEL_WRITE:-gemini-3.8-flash}
+      DATABASE_URL: postgresql+psycopg://jobpilot:${POSTGRES_PASSWORD:-jobpilot}@db:5432/jobpilot
+
+volumes:
+  db_data:
