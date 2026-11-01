@@ -22,3 +22,15 @@ def test_rejects_low_score_closed_non_posting_and_excluded_title():
     assert not accepts(job(is_active=False), PROFILE)
     assert not accepts(job(is_job_posting=False), PROFILE)
     assert not accepts(job(title="Python Intern"), PROFILE)
+
+
+def test_choose_cv_by_language_with_fallback():
+    from app.ai import choose_cv
+
+    both = {"es": "CV-ES", "en": "CV-EN"}
+    assert choose_cv(both, "es") == "CV-ES"
+    assert choose_cv(both, "en") == "CV-EN"
+    assert choose_cv(both, "other") == "CV-EN"  # idioma desconocido -> inglés
+    assert choose_cv(both, "es", override="en") == "CV-EN"  # toggle manual
+    assert choose_cv({"en": "CV-EN"}, "es") == "CV-EN"  # falta el ES -> el otro
+    assert choose_cv({}, "es") is None

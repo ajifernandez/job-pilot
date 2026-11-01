@@ -78,3 +78,18 @@ export type Run = {
   started_at: string;
   finished_at: string | null;
 };
+
+export type Application = {
+  lang: "es" | "en";
+  cover_letter_md: string;
+  summary_md: string;
+  highlights: string[];
+  analysis: {
+    matched_experience: { requirement: string; evidence: string; cv_section: string }[];
+    gaps: string[];
+    ats_keywords: string[];
+  } | null;
+  model: string;
+  finalized_at: string | null;
+  updated_at: string;
+};

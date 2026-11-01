@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { ApplicationModal } from "@/components/application-modal";
 import { Kanban } from "@/components/kanban";
 import { scoreColor } from "@/components/job-card";
 import { api, Job, JobStatus, STATUSES } from "@/lib/api";
@@ -64,6 +65,7 @@ export default function JobsPage() {
   const [tech, setTech] = useState("");
   const [source, setSource] = useState<"" | "ai" | "manual">("");
   const [days, setDays] = useState(0);
+  const [applyJob, setApplyJob] = useState<Job | null>(null);
 
   const load = useCallback(() => api<Job[]>("/api/jobs").then(setJobs).catch((e) => setError(e.message)), []);
   useEffect(() => {
@@ -145,7 +147,7 @@ export default function JobsPage() {
       {error && <p className="mb-4 text-sm text-red-600" role="alert">{error}</p>}
 
       {view === "board" ? (
-        <Kanban jobs={visible} onMove={move} onRemove={remove} />
+        <Kanban jobs={visible} onMove={move} onRemove={remove} onApply={setApplyJob} />
       ) : (
         <ul className="space-y-2">
           {visible.map((job) => (
@@ -162,12 +164,15 @@ export default function JobsPage() {
                 <select aria-label="Cambiar estado" value={job.status} onChange={(e) => move(job.id, e.target.value as JobStatus, [job.id])} className={sel}>
                   {Object.entries(STATUSES).filter(([k]) => k !== "inbox" && k !== "dismissed").map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </select>
+                <button onClick={() => setApplyJob(job)} className="text-violet-700 hover:underline">Candidatura</button>
                 <button onClick={() => remove(job)} className="text-zinc-400 hover:text-red-600" aria-label="Descartar">✕</button>
               </div>
             </li>
           ))}
         </ul>
       )}
+
+      {applyJob && <ApplicationModal job={applyJob} onClose={() => setApplyJob(null)} onChanged={load} />}
     </>
   );
 }

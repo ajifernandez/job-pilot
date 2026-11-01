@@ -2,7 +2,7 @@ import asyncio
 import hashlib
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.ai import extract_job
+from app.ai import choose_cv, extract_job, write_application
 from app.config import settings
 from app.finder import fail_stale_runs, scheduler, start_run
 from app.fetch_page import FetchError, canonical_url, fetch_page
@@ -91,6 +91,29 @@ class JobOut(BaseModel):
     position: float
     notes: str | None
     created_at: datetime
+    updated_at: datetime
+
+
+class GenerateIn(BaseModel):
+    lang: Literal["es", "en"] | None = None  # None = elegir según el idioma de la oferta
+
+
+class ApplicationEdit(BaseModel):
+    cover_letter_md: str
+    summary_md: str
+    highlights: list[str]
+    notes: str | None = None  # se guarda en la oferta
+
+
+class ApplicationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    lang: Literal["es", "en"]
+    cover_letter_md: str
+    summary_md: str
+    highlights: list[str]
+    analysis: dict | None
+    model: str
+    finalized_at: datetime | None
     updated_at: datetime
 
 
@@ -204,8 +227,6 @@ async def create_job(body: JobCreate, db: Session = Depends(get_db)):
 @app.patch("/api/jobs/{job_id}", response_model=JobOut)
 def update_job(job_id: uuid.UUID, body: JobPatch, db: Session = Depends(get_db)):
     job = db.get(Job, job_id) or _404()
-    if body.status == "applied" and job.status != "applied":
-        _require_finalized(db, [job_id])
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(job, field, value)
     db.commit()
@@ -218,8 +239,6 @@ def reorder_jobs(body: Reorder, db: Session = Depends(get_db)):
     jobs = {j.id: j for j in db.scalars(select(Job).where(Job.id.in_(body.ids)))}
     if len(jobs) != len(set(body.ids)):
         raise HTTPException(404, "Oferta no encontrada")
-    if body.status == "applied":
-        _require_finalized(db, [i for i, j in jobs.items() if j.status != "applied"])
     for pos, job_id in enumerate(body.ids):
         jobs[job_id].status, jobs[job_id].position = body.status, pos
     db.commit()
@@ -235,10 +254,57 @@ def delete_job(job_id: uuid.UUID, db: Session = Depends(get_db)):
     db.commit()
 
 
-def _require_finalized(db: Session, job_ids: list[uuid.UUID]) -> None:
-    done = set(db.scalars(select(Application.job_id).where(Application.job_id.in_(job_ids), Application.finalized_at.is_not(None))))
-    if set(job_ids) - done:
-        raise HTTPException(409, "Revisa y confirma la candidatura antes de marcarla como Aplicado")
+@app.get("/api/jobs/{job_id}/application", response_model=ApplicationOut | None)
+def get_application(job_id: uuid.UUID, db: Session = Depends(get_db)):
+    return db.scalar(select(Application).where(Application.job_id == job_id))
+
+
+@app.post("/api/jobs/{job_id}/application/generate", response_model=ApplicationOut)
+async def generate_application(job_id: uuid.UUID, body: GenerateIn, db: Session = Depends(get_db)):
+    job = db.get(Job, job_id) or _404()
+    cv = choose_cv({c.lang: c for c in db.scalars(select(CV))}, job.language, body.lang)
+    if not cv:
+        raise HTTPException(422, "Guarda al menos un CV en la pestaña CVs")
+    try:
+        draft = await write_application(job, cv.content_md, cv.lang)
+    except genai_errors.APIError as e:
+        raise HTTPException(502, f"Gemini: {e.message}") from e
+    app_ = db.scalar(select(Application).where(Application.job_id == job_id)) or Application(job_id=job_id)
+    app_.cv_id, app_.lang, app_.model = cv.id, cv.lang, settings.gemini_model_write
+    app_.cover_letter_md, app_.summary_md, app_.highlights = draft.cover_letter_md, draft.tailored_summary_md, draft.highlights
+    app_.analysis = {"matched_experience": [m.model_dump() for m in draft.matched_experience], "gaps": draft.gaps, "ats_keywords": draft.ats_keywords}
+    db.add(app_)
+    db.commit()
+    db.refresh(app_)
+    return app_
+
+
+def _save_application(db: Session, job_id: uuid.UUID, body: ApplicationEdit) -> Application:
+    app_ = db.scalar(select(Application).where(Application.job_id == job_id)) or _404()
+    app_.cover_letter_md, app_.summary_md, app_.highlights = body.cover_letter_md, body.summary_md, body.highlights
+    if body.notes is not None:
+        db.get(Job, job_id).notes = body.notes
+    return app_
+
+
+@app.put("/api/jobs/{job_id}/application", response_model=ApplicationOut)
+def save_application(job_id: uuid.UUID, body: ApplicationEdit, db: Session = Depends(get_db)):
+    app_ = _save_application(db, job_id, body)
+    db.commit()
+    db.refresh(app_)
+    return app_
+
+
+@app.post("/api/jobs/{job_id}/application/finalize", response_model=ApplicationOut)
+def finalize_application(job_id: uuid.UUID, body: ApplicationEdit, db: Session = Depends(get_db)):
+    """Confirma el paquete revisado y mueve la oferta a Aplicado."""
+    app_ = _save_application(db, job_id, body)
+    app_.finalized_at = datetime.now(timezone.utc)
+    job = db.get(Job, job_id)
+    job.status, job.position = "applied", -1  # arriba de la columna
+    db.commit()
+    db.refresh(app_)
+    return app_
 
 
 @app.get("/api/profiles", response_model=list[ProfileOut])

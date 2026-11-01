@@ -16,7 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/cvs/" className="hover:underline">CVs</Link>
           </nav>
         </header>
-        <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
+        <main className="mx-auto max-w-[1600px] px-4 py-6">{children}</main>
       </body>
     </html>
   );

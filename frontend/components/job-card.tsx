@@ -10,7 +10,7 @@ export function scoreColor(score: number | null) {
   return "bg-green-100 text-green-800";
 }
 
-export function JobCard({ job, onRemove }: { job: Job; onRemove: (job: Job) => void }) {
+export function JobCard({ job, onRemove, onApply }: { job: Job; onRemove: (job: Job) => void; onApply: (job: Job) => void }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="rounded-lg border border-zinc-200 bg-white p-3 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
@@ -41,7 +41,10 @@ export function JobCard({ job, onRemove }: { job: Job; onRemove: (job: Job) => v
             </ul>
           )}
           <div className="flex items-center justify-between text-xs">
-            {job.url ? <a href={job.url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">Ver oferta ↗</a> : <span />}
+            <div className="flex gap-3">
+              <button onClick={() => onApply(job)} className="font-medium text-violet-700 hover:underline">Candidatura</button>
+              {job.url && <a href={job.url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">Ver oferta ↗</a>}
+            </div>
             <button onClick={() => onRemove(job)} className="text-zinc-400 hover:text-red-600">
               {job.source === "ai" ? "Descartar" : "Eliminar"}
             </button>
