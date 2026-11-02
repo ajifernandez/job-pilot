@@ -30,6 +30,7 @@ async def lifespan(_: FastAPI):
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE search_profiles ADD COLUMN IF NOT EXISTS portals text[] NOT NULL DEFAULT '{}'"))
         conn.execute(text("ALTER TABLE search_runs ADD COLUMN IF NOT EXISTS sources jsonb"))
+        conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS discard_reason text"))
     fail_stale_runs()
     task = asyncio.create_task(scheduler()) if settings.search_interval_hours > 0 else None
     yield
@@ -71,6 +72,7 @@ class JobPatch(BaseModel):
     status: JobStatus | None = None
     position: float | None = None
     notes: str | None = None
+    discard_reason: str | None = None
 
 
 class JobOut(BaseModel):
@@ -93,6 +95,7 @@ class JobOut(BaseModel):
     status: str
     position: float
     notes: str | None
+    discard_reason: str | None
     created_at: datetime
     updated_at: datetime
 

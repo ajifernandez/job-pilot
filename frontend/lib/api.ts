@@ -9,6 +9,7 @@ export const STATUSES = {
   interview: "Entrevista",
   offer: "Oferta recibida",
   rejected: "Descartado",
+  discarded: "Descartada (manual)",
   dismissed: "Ignorada",
 } as const;
 export type JobStatus = keyof typeof STATUSES;
@@ -32,6 +33,7 @@ export type Job = {
   status: JobStatus;
   position: number;
   notes: string | null;
+  discard_reason: string | null;
   created_at: string;
 };
 
@@ -52,7 +54,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 // Columnas del tablero (inbox/dismissed no se muestran: la búsqueda inserta directo en "Por aplicar")
-export const COLUMNS: JobStatus[] = ["to_apply", "applying", "applied", "interview", "offer", "rejected"];
+export const COLUMNS: JobStatus[] = ["to_apply", "applying", "applied", "interview", "offer", "rejected", "discarded"];
 
 export type Profile = {
   id: string;

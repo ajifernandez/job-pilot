@@ -103,6 +103,16 @@ export default function JobsPage() {
     }
   }
 
+  async function patch(job: Job, change: Partial<Job>) {
+    setJobs((js) => js.map((j) => (j.id === job.id ? { ...j, ...change } : j)));
+    try {
+      await api(`/api/jobs/${job.id}`, { method: "PATCH", body: JSON.stringify(change) });
+    } catch (e) {
+      setError((e as Error).message);
+      load();
+    }
+  }
+
   async function remove(job: Job) {
     try {
       await api(`/api/jobs/${job.id}`, { method: "DELETE" });
@@ -147,7 +157,7 @@ export default function JobsPage() {
       {error && <p className="mb-4 text-sm text-red-600" role="alert">{error}</p>}
 
       {view === "board" ? (
-        <Kanban jobs={visible} onMove={move} onRemove={remove} onApply={setApplyJob} />
+        <Kanban jobs={visible} onMove={move} onRemove={remove} onApply={setApplyJob} onPatch={patch} />
       ) : (
         <ul className="space-y-2">
           {visible.map((job) => (

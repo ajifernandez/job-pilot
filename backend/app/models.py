@@ -23,7 +23,7 @@ from app.config import settings
 LANGS = ("es", "en")
 WORK_MODES = ("remote", "hybrid", "onsite", "unknown")
 # inbox/dismissed = bandeja de entrada de la IA; el resto son columnas del Kanban
-JOB_STATUS = ("inbox", "dismissed", "to_apply", "applying", "applied", "interview", "offer", "rejected")
+JOB_STATUS = ("inbox", "dismissed", "to_apply", "applying", "applied", "interview", "offer", "rejected", "discarded")
 
 
 def enum(*values: str, name: str) -> Enum:
@@ -95,6 +95,7 @@ class Job(Base):
     status: Mapped[str] = mapped_column(enum(*JOB_STATUS, name="job_status"), default="inbox", index=True)
     position: Mapped[float] = mapped_column(Float, default=0)
     notes: Mapped[str | None] = mapped_column(Text)
+    discard_reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = created()
     updated_at: Mapped[datetime] = updated()
 

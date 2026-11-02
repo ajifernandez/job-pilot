@@ -9,9 +9,10 @@ type Props = {
   onMove: (jobId: string, status: JobStatus, orderedIds: string[]) => void;
   onRemove: (job: Job) => void;
   onApply: (job: Job) => void;
+  onPatch: (job: Job, patch: Partial<Job>) => void;
 };
 
-export function Kanban({ jobs, onMove, onRemove, onApply }: Props) {
+export function Kanban({ jobs, onMove, onRemove, onApply, onPatch }: Props) {
   const byStatus = (s: JobStatus) =>
     jobs.filter((j) => j.status === s).sort((a, b) => a.position - b.position || b.created_at.localeCompare(a.created_at));
 
@@ -45,7 +46,7 @@ export function Kanban({ jobs, onMove, onRemove, onApply }: Props) {
                       <Draggable key={job.id} draggableId={job.id} index={i} disableInteractiveElementBlocking>
                         {(p) => (
                           <div ref={p.innerRef} {...p.draggableProps} {...p.dragHandleProps}>
-                            <JobCard job={job} onRemove={onRemove} onApply={onApply} />
+                            <JobCard job={job} onRemove={onRemove} onApply={onApply} onPatch={onPatch} />
                           </div>
                         )}
                       </Draggable>

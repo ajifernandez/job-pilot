@@ -51,6 +51,9 @@ Tasks:
    - Work mode, location and salary compatible with candidate preferences: 15
    Hard mismatch (e.g. required onsite in another country, required language the
    candidate lacks) -> cap at 30 and list it in deal_breakers.
+   work_mode: "remote" only if the page says fully remote; "hybrid" if it mentions
+   days in office or hybrid; "onsite" if it requires presence; otherwise "unknown".
+   Never infer it from the search snippet or the company name.
 7. Write match_reason BEFORE deciding match_score: max 2 sentences, in Spanish,
    naming the concrete overlaps and gaps.
 If no CV is provided, set match_score to 0 and match_reason to "Sin CV".

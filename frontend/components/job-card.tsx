@@ -10,8 +10,9 @@ export function scoreColor(score: number | null) {
   return "bg-green-100 text-green-800";
 }
 
-export function JobCard({ job, onRemove, onApply }: { job: Job; onRemove: (job: Job) => void; onApply: (job: Job) => void }) {
+export function JobCard({ job, onRemove, onApply, onPatch }: { job: Job; onRemove: (job: Job) => void; onApply: (job: Job) => void; onPatch: (job: Job, patch: Partial<Job>) => void }) {
   const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState(job.discard_reason ?? "");
   return (
     <div className="rounded-lg border border-zinc-200 bg-white p-3 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <div className="flex items-start justify-between gap-2">
@@ -25,6 +26,16 @@ export function JobCard({ job, onRemove, onApply }: { job: Job; onRemove: (job: 
       <p className="mt-0.5 text-xs text-zinc-500">
         {[job.company, job.location, job.work_mode !== "unknown" && job.work_mode, job.salary].filter(Boolean).join(" · ")}
       </p>
+      {job.status === "discarded" && (
+        <input
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          onBlur={() => reason !== (job.discard_reason ?? "") && onPatch(job, { discard_reason: reason || null })}
+          placeholder="Motivo del descarte"
+          aria-label="Motivo del descarte"
+          className="mt-2 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+        />
+      )}
       <div className="mt-2 flex flex-wrap items-center gap-1">
         {job.source === "ai" && <span className="rounded bg-violet-100 px-1.5 py-0.5 text-xs text-violet-800">IA</span>}
         {job.technologies.slice(0, open ? 20 : 4).map((t) => (
