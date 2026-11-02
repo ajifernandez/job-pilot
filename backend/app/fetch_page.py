@@ -111,7 +111,44 @@ def _check_public(url: str) -> None:
             raise FetchError("URL apunta a una red privada")
 
 
+def _org_candidates(parts) -> list[str]:
+    """Slug del tablero en el ATS para URLs con ?ashby_jid / ?gh_jid en la web de la empresa."""
+    label = (parts.hostname or "").removeprefix("www.").split(".")[0]
+    return [label, label.removesuffix("hq")]  # ponytail: heurística; el slug real puede diferir del dominio
+
+
+async def _ats_page(url: str) -> Page | None:
+    """Ofertas que se pintan con JS: se leen de la API pública de Ashby / Greenhouse."""
+    parts = urlsplit(url)
+    q = dict(parse_qsl(parts.query))
+    segs = [s for s in parts.path.split("/") if s]
+    ashby = [(segs[0], segs[1])] if parts.hostname == "jobs.ashbyhq.com" and len(segs) >= 2 else []
+    gh = [(segs[0], segs[2])] if parts.hostname in {"job-boards.greenhouse.io", "boards.greenhouse.io"} and len(segs) >= 3 and segs[1] == "jobs" else []
+    if "ashby_jid" in q:
+        ashby = [(o, q["ashby_jid"]) for o in _org_candidates(parts)]
+    if "gh_jid" in q:
+        gh = [(o, q["gh_jid"]) for o in _org_candidates(parts)]
+    async with httpx.AsyncClient(timeout=20) as client:
+        for org, jid in ashby:
+            r = await client.get(f"https://api.ashbyhq.com/posting-api/job-board/{org}")
+            job = next((j for j in r.json().get("jobs", []) if j["id"] == jid), None) if r.is_success else None
+            if job:
+                text = job.get("descriptionPlain", "")
+                data = {"title": job["title"], "company": org, "location": job.get("location"), "description": text, "url": job.get("jobUrl")}
+                return Page(job.get("jobUrl") or url, json.dumps(data, ensure_ascii=False)[:MAX_CHARS], text[:MAX_CHARS])
+        for org, jid in gh:
+            r = await client.get(f"https://boards-api.greenhouse.io/v1/boards/{org}/jobs/{jid}")
+            if r.is_success:
+                job = r.json()
+                text = html_to_text(unescape(job.get("content", "")))
+                data = {"title": job["title"], "company": org, "location": (job.get("location") or {}).get("name"), "description": text}
+                return Page(job.get("absolute_url") or url, json.dumps(data, ensure_ascii=False)[:MAX_CHARS], text[:MAX_CHARS])
+    return None
+
+
 async def fetch_page(url: str) -> Page:
+    if page := await _ats_page(url):
+        return page
     async with httpx.AsyncClient(timeout=20, headers={"User-Agent": UA, "Accept-Language": "es,en;q=0.8"}) as client:
         for _ in range(5):  # redirects manuales: cada salto pasa el filtro de red privada
             _check_public(url)
@@ -119,6 +156,8 @@ async def fetch_page(url: str) -> Page:
                 if res.is_redirect:
                     url = urljoin(url, res.headers["location"])
                     continue
+                if "error=true" in url and "greenhouse.io" in url:
+                    raise FetchError("La oferta ya está cerrada (Greenhouse)")
                 if res.status_code >= 400:
                     raise FetchError(f"La página respondió {res.status_code}")
                 body = b""
