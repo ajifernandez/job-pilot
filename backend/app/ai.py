@@ -22,7 +22,11 @@ async def generate_json[T: BaseModel](schema: type[T], system: str, user: str, m
             temperature=0.3,
         ),
     )
-    return schema.model_validate_json(res.text or "")
+    if not res.text:  # ponytail: Gemini a veces devuelve vacío con grounding; se muestra el motivo en vez del error de Pydantic
+        cand = (res.candidates or [None])[0]
+        reason = getattr(cand, "finish_reason", None) or getattr(res.prompt_feedback, "block_reason", None) or "desconocido"
+        raise RuntimeError(f"Gemini no devolvió JSON (motivo: {reason}). Reintenta la búsqueda.")
+    return schema.model_validate_json(res.text)
 
 
 # --- Extracción y scoring de una oferta -------------------------------------
