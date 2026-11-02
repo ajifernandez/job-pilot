@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { DraggableProvidedDragHandleProps } from "@hello-pangea/dnd";
 import { Job } from "@/lib/api";
 
 export function scoreColor(score: number | null) {
@@ -10,12 +11,13 @@ export function scoreColor(score: number | null) {
   return "bg-green-100 text-green-800";
 }
 
-export function JobCard({ job, onRemove, onApply, onPatch }: { job: Job; onRemove: (job: Job) => void; onApply: (job: Job) => void; onPatch: (job: Job, patch: Partial<Job>) => void }) {
+export function JobCard({ job, onRemove, onApply, onPatch, handleProps }: { job: Job; onRemove: (job: Job) => void; onApply: (job: Job) => void; onPatch: (job: Job, patch: Partial<Job>) => void; handleProps?: DraggableProvidedDragHandleProps | null }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState(job.discard_reason ?? "");
   return (
     <div className="rounded-lg border border-zinc-200 bg-white p-3 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <div className="flex items-start justify-between gap-2">
+        <span {...handleProps} title="Arrastrar" aria-label="Arrastrar" className="-ml-1 cursor-grab select-none px-0.5 text-zinc-400">⠿</span>
         <button onClick={() => setOpen(!open)} className="text-left font-medium hover:underline" aria-expanded={open}>
           {job.title}
         </button>
@@ -30,9 +32,6 @@ export function JobCard({ job, onRemove, onApply, onPatch }: { job: Job; onRemov
         <input
           value={reason}
           onChange={(e) => setReason(e.target.value)}
-          onMouseDown={(e) => e.stopPropagation()}
-          onTouchStart={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
           onBlur={() => reason !== (job.discard_reason ?? "") && onPatch(job, { discard_reason: reason || null })}
           placeholder="Motivo del descarte"
           aria-label="Motivo del descarte"

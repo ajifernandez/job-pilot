@@ -45,8 +45,8 @@ export function Kanban({ jobs, onMove, onRemove, onApply, onPatch }: Props) {
                     {items.map((job, i) => (
                       <Draggable key={job.id} draggableId={job.id} index={i} disableInteractiveElementBlocking>
                         {(p) => (
-                          <div ref={p.innerRef} {...p.draggableProps} {...p.dragHandleProps}>
-                            <JobCard job={job} onRemove={onRemove} onApply={onApply} onPatch={onPatch} />
+                          <div ref={p.innerRef} {...p.draggableProps}>
+                            <JobCard job={job} onRemove={onRemove} onApply={onApply} onPatch={onPatch} handleProps={p.dragHandleProps} />
                           </div>
                         )}
                       </Draggable>
