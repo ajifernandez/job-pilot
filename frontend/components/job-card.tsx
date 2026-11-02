@@ -30,6 +30,9 @@ export function JobCard({ job, onRemove, onApply, onPatch }: { job: Job; onRemov
         <input
           value={reason}
           onChange={(e) => setReason(e.target.value)}
+          onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
           onBlur={() => reason !== (job.discard_reason ?? "") && onPatch(job, { discard_reason: reason || null })}
           placeholder="Motivo del descarte"
           aria-label="Motivo del descarte"
